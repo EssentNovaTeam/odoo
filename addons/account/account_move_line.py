@@ -1080,7 +1080,7 @@ class account_move_line(osv.osv):
                     'date':date,
                     'state': 'draft',
                     'line_id': writeoff_lines
-                })
+                }, context=context)
 
             writeoff_line_ids = self.search(cr, uid, [('move_id', '=', writeoff_move_id), ('account_id', '=', account_id)])
             if account_id == writeoff_acc_id:

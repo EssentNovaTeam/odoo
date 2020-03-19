@@ -475,6 +475,8 @@ class PreforkServer(CommonServer):
         worker = klass(self)
         pid = os.fork()
         if pid != 0:
+            _rss, vms = memory_info(psutil.Process(os.getpid()))
+            worker.parent_vms = vms
             worker.pid = pid
             self.workers[pid] = worker
             workers_registry[pid] = worker
@@ -700,6 +702,14 @@ class Worker(object):
                 raise
 
     def process_limit(self):
+        def get_memory_imit(key):
+            if self.config.get(key + '_relative'):
+                res = self.parent_vms + self.config[key + '_relative']
+            else:
+                res = self.config[key]
+            _logger.debug('Worker (%d) using %s as %s', self.pid, config['limit_time_cpu'], key)
+            return res
+
         # If our parent changed sucide
         if self.ppid != os.getppid():
             _logger.info("Worker (%s) Parent changed", self.pid)
@@ -710,13 +720,13 @@ class Worker(object):
             self.alive = False
         # Reset the worker if it consumes too much memory (e.g. caused by a memory leak).
         rss, vms = memory_info(psutil.Process(os.getpid()))
-        if vms > config['limit_memory_soft']:
+        if vms > get_memory_limit('limit_memory_soft'):
             _logger.info('Worker (%d) virtual memory limit (%s) reached.', self.pid, vms)
             self.alive = False      # Commit suicide after the request.
 
         # VMS and RLIMIT_AS are the same thing: virtual memory, a.k.a. address space
         soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-        resource.setrlimit(resource.RLIMIT_AS, (config['limit_memory_hard'], hard))
+        resource.setrlimit(resource.RLIMIT_AS, (get_memory_limit('limit_memory_hard'), hard))
 
         # SIGXCPU (exceeded CPU time) signal handler will raise an exception.
         r = resource.getrusage(resource.RUSAGE_SELF)

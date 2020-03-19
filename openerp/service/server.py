@@ -677,6 +677,7 @@ class Worker(object):
         self.watchdog_timeout = multi.timeout
         self.ppid = os.getpid()
         self.pid = None
+        self.base_vms = None
         self.alive = True
         # should we rename into lifetime ?
         self.request_max = multi.limit_request
@@ -700,6 +701,35 @@ class Worker(object):
                 raise
 
     def process_limit(self):
+        def get_memory_limit(key):
+            """ If relative limits are set in the config file, they are applied
+            to the virtual memory in use at the moment of forking. The
+            assumption is that most if not all of this memory is shared with
+            the parent process and remains untouched by this worker. If nothing
+            else, applying a relative limit will prevent the situation in which
+            the parent process is larger than the soft limit which leads to
+            each newly spawned worker being retired after only a single request,
+            grinding the application down to a halt.
+
+            DISCLAIMER: Using this is a bad idea. Sudden increases of memory,
+            apart from exceptional calls or jobs are due to firing up (more and
+            more) queue listeners and/or loading registries for other databases.
+
+            It is only in single-database installations like ours that using
+            this change may seem not to be completely disastrous because the
+            firing of queue listeners and the loading of the registries happens
+            in the main process.
+            """
+            if config.get(key + '_relative'):
+                if not self.base_vms:
+                    self.base_vms = memory_info(psutil.Process(os.getpid()))[1]
+                    _logger.debug('Worker (%d) initializing base vms as %s',
+                                  self.pid, self.base_vms)
+                res = self.base_vms + int(config[key + '_relative'])
+            else:
+                res = config[key]
+            return res
+
         # If our parent changed sucide
         if self.ppid != os.getppid():
             _logger.info("Worker (%s) Parent changed", self.pid)
@@ -710,13 +740,14 @@ class Worker(object):
             self.alive = False
         # Reset the worker if it consumes too much memory (e.g. caused by a memory leak).
         rss, vms = memory_info(psutil.Process(os.getpid()))
-        if vms > config['limit_memory_soft']:
-            _logger.info('Worker (%d) virtual memory limit (%s) reached.', self.pid, vms)
+        limit = get_memory_limit('limit_memory_soft')
+        if vms > limit:
+            _logger.info('Worker (%d) virtual memory limit (%s > %s) reached.', self.pid, vms, limit)
             self.alive = False      # Commit suicide after the request.
 
         # VMS and RLIMIT_AS are the same thing: virtual memory, a.k.a. address space
         soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-        resource.setrlimit(resource.RLIMIT_AS, (config['limit_memory_hard'], hard))
+        resource.setrlimit(resource.RLIMIT_AS, (get_memory_limit('limit_memory_hard'), hard))
 
         # SIGXCPU (exceeded CPU time) signal handler will raise an exception.
         r = resource.getrusage(resource.RUSAGE_SELF)

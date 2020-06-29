@@ -49,6 +49,33 @@ _logger = logging.getLogger(__name__)
 _test_logger = logging.getLogger('openerp.tests')
 
 
+def test_enabled_for_module(cr, module_name):
+    """ Return if the module, or one of its dependencies was marked for testing
+    """
+    if not tools.config.options['test_modules']:
+        return True
+    cr.execute(
+        """
+        WITH RECURSIVE tree AS (
+            SELECT m.name, m.name as dependency
+            FROM ir_module_module m
+            WHERE name = %s
+            UNION
+            SELECT tree.name, immd.name as dependency
+            FROM tree
+            JOIN ir_module_module imm ON imm.name = tree.dependency
+            JOIN ir_module_module_dependency immd
+            ON immd.module_id = imm.id
+        )
+        SELECT dependency FROM tree""", (module_name,))
+    for module, in cr.fetchall():
+        if module in tools.config.options['test_modules']:
+            _logger.info('Module %s marked for testing', module_name)
+            return True
+    _logger.warn('Module %s not marked for testing', module_name)
+    return False
+
+
 def load_module_graph(cr, graph, status=None, perform_checks=True, skip_modules=None, report=None):
     """Migrates+Updates or Installs all module nodes from ``graph``
        :param graph: graph of module nodes to load
@@ -193,7 +220,7 @@ def load_module_graph(cr, graph, status=None, perform_checks=True, skip_modules=
 
             if has_demo:
                 # launch tests only in demo mode, allowing tests to use demo data.
-                if tools.config.options['test_enable']:
+                if tools.config.options['test_enable'] and test_enabled_for_module(cr, module_name):
                     # Yamel test
                     report.record_result(load_test(module_name, idref, mode))
                     # Python tests
@@ -457,7 +484,8 @@ def load_modules(db, force_demo=False, status=None, update_module=False):
             else:
                 cr.execute("SELECT name FROM ir_module_module WHERE state='installed'")
             for module_name in cr.fetchall():
-                report.record_result(openerp.modules.module.run_unit_tests(module_name[0], cr.dbname, position=runs_post_install))
+                if test_enabled_for_module(cr, module_name[0]):
+                    report.record_result(openerp.modules.module.run_unit_tests(module_name[0], cr.dbname, position=runs_post_install))
             _logger.log(25, "All post-tested in %.2fs, %s queries", time.time() - t0, openerp.sql_db.sql_counter - t0_sql)
     finally:
         cr.close()

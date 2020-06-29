@@ -196,6 +196,8 @@ class configmanager(object):
                          my_default=False, help="Enable YAML and unit tests.")
         group.add_option("--test-commit", action="store_true", dest="test_commit",
                          my_default=False, help="Commit database changes performed by YAML or XML tests.")
+        group.add_option("--test-modules", dest="test_modules",
+                          help="Only test one or more modules and their dependencies. Implies --test-enable but not the actual installation/upgrade of the modules.")
         parser.add_option_group(group)
 
         # Logging Group
@@ -486,6 +488,9 @@ class configmanager(object):
         self.options['init'] = opt.init and dict.fromkeys(opt.init.split(','), 1) or {}
         self.options['demo'] = not opt.without_demo and dict(self.options['init']) or {}
         self.options['update'] = opt.update and dict.fromkeys(opt.update.split(','), 1) or {}
+        self.options['test_modules'] = opt.test_modules and dict.fromkeys(opt.test_modules.split(','), 1) or {}
+        if self.options['test_modules']:
+            self.options['test_enable'] = True
         self.options['translate_modules'] = opt.translate_modules and map(lambda m: m.strip(), opt.translate_modules.split(',')) or ['all']
         self.options['translate_modules'].sort()
 

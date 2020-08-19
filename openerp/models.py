@@ -178,6 +178,14 @@ def get_pg_type(f, type_override=None):
 
     if field_type in FIELDS_TO_PGTYPES:
         pg_type =  (FIELDS_TO_PGTYPES[field_type], FIELDS_TO_PGTYPES[field_type])
+        if field_type == fields.integer and getattr(f, 'bigint', False):
+            pg_type = ('int8', 'int8')
+        elif field_type == fields.many2one:
+            # Expect the type patched onto the field object
+            patched_type = getattr(f, '_obj_pg_type', None)
+            if patched_type:
+                pg_type = (patched_type, patched_type)
+
     elif issubclass(field_type, fields.float):
         # Explicit support for "falsy" digits (0, False) to indicate a
         # NUMERIC field with no fixed precision. The values will be saved
@@ -269,6 +277,148 @@ PREFETCH_MAX = 200
 LOG_ACCESS_COLUMNS = ['create_uid', 'create_date', 'write_uid', 'write_date']
 MAGIC_COLUMNS = ['id'] + LOG_ACCESS_COLUMNS
 
+def column_type(cr, table, column):
+    """ Return the sql column type.
+    Taken from Odoo 13.0.
+    """
+    cr.execute(
+        """ SELECT udt_name FROM information_schema.columns
+        WHERE table_name = %s AND column_name = %s """, (table, column))
+    row = cr.fetchone()
+    return row[0] if row else None
+
+
+def get_fk_constraints(cr, table, column):
+    """ Get the FK constraints that are based on the given column. """
+    cr.execute(
+        """
+        SELECT kcu.table_name, kcu.column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_schema = kcu.constraint_schema
+                AND tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_schema = tc.constraint_schema
+                AND ccu.constraint_name = tc.constraint_name
+        JOIN pg_constraint pgc
+            ON pgc.conname = tc.constraint_name
+                AND tc.table_name = pgc.conrelid::regclass::text
+        WHERE ccu.table_name = %s
+            AND ccu.column_name = %s
+            AND constraint_type = 'FOREIGN KEY'
+        """, (table, column))
+    return cr.fetchall()
+
+
+def get_views(cr, table, column):
+    """ Get all views that (recursively) depend on the given column.
+    https://stackoverflow.com/questions/4462908
+    """
+    cr.execute(
+        """
+        WITH RECURSIVE view_deps AS (
+            SELECT DISTINCT dependent_ns.nspname as schema,
+                dependent_view.relname as view,
+                1 AS level
+            FROM pg_depend
+            JOIN pg_rewrite
+                ON pg_depend.objid = pg_rewrite.oid
+            JOIN pg_class as dependent_view
+                ON pg_rewrite.ev_class = dependent_view.oid
+            JOIN pg_class as source_table
+                ON pg_depend.refobjid = source_table.oid
+            JOIN pg_namespace dependent_ns
+                ON dependent_ns.oid = dependent_view.relnamespace
+            JOIN pg_namespace source_ns
+                ON source_ns.oid = source_table.relnamespace
+            JOIN pg_attribute
+                ON pg_depend.refobjid = pg_attribute.attrelid
+                    AND pg_depend.refobjsubid = pg_attribute.attnum
+            WHERE source_ns.nspname = 'public'
+                AND source_table.relname = %s
+                AND pg_attribute.attnum > 0
+                AND pg_attribute.attname = %s
+            UNION
+            SELECT DISTINCT dependent_ns.nspname as schema,
+                dependent_view.relname as view,
+                level + 1
+            FROM pg_depend
+            JOIN pg_rewrite
+                ON pg_depend.objid = pg_rewrite.oid
+            JOIN pg_class as dependent_view
+                ON pg_rewrite.ev_class = dependent_view.oid
+            JOIN pg_class as source_table
+                ON pg_depend.refobjid = source_table.oid
+            JOIN pg_namespace dependent_ns
+                ON dependent_ns.oid = dependent_view.relnamespace
+            JOIN pg_namespace source_ns
+                ON source_ns.oid = source_table.relnamespace
+            INNER JOIN view_deps vd
+                ON vd.schema = source_ns.nspname
+                    AND vd.view = source_table.relname
+                    AND dependent_view.relname != vd.view
+        )
+        SELECT view, pgv.definition
+        FROM view_deps
+        JOIN pg_views pgv ON pgv.viewname = view
+        GROUP BY view, definition
+        ORDER BY MIN(level) ASC;
+        """, (table, column))
+    return [row for row in cr.fetchall()]
+
+
+def int4_to_int8(cr, table, column):
+    """ Migrate an INTEGER column to a BIGINT column """
+    logger = logging.getLogger('%s.int4_to_int8.%s.%s' % (__name__, table, column))
+
+    # Fetch views to drop
+    views = get_views(cr, table, column)
+
+    for view in views:
+        logger.info('Dropping view "%s"', view[0])
+        cr.execute('DROP VIEW "%s"' % view[0])
+
+    # Update column type
+    if column_type(cr, table, column) == 'int8':
+        # Allow for manual tinkering with column types.
+        logger.info('Column type is already int8!')
+    else:
+        logger.info('Altering column type')
+        cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE INT8' % (
+            table, column))
+
+    # Before 10.0 sequences were BIGINT by default, and the
+    # 'AS BIGINT' syntax is not supported
+    if cr._cnx.server_version >= 100000:
+        cr.execute(
+            """
+            SELECT seqclass.relname AS sequence_name
+            FROM pg_class AS seqclass
+                JOIN pg_sequence AS seq
+                    ON seq.seqrelid = seqclass.relfilenode
+                JOIN pg_depend AS dep
+                    ON ( seq.seqrelid = dep.objid )
+                JOIN pg_class AS depclass
+                    ON dep.refobjid = depclass.relfilenode
+                JOIN pg_attribute AS attrib
+                    ON attrib.attnum = dep.refobjsubid
+                        AND attrib.attrelid = dep.refobjid
+            WHERE depclass.relname = %s AND attrib.attname = %s
+            """, (table, column))
+        for row in cr.fetchall():
+            logger.info('Updating type of sequence %s', row[0])
+            cr.execute('ALTER SEQUENCE "%s" AS BIGINT' % row[0])
+
+    for constraint in get_fk_constraints(cr, table, column):
+        # Call this code recursively on any column with an FK constaint
+        int4_to_int8(cr, constraint[0], constraint[1])
+
+    # Restore views
+    for view in views:
+        logger.info('Recreating view "%s"' % view[0])
+        cr.execute('CREATE VIEW "%s" AS %s' % view)
+
+
 class BaseModel(object):
     """ Base class for OpenERP models.
 
@@ -301,6 +451,7 @@ class BaseModel(object):
     _auto = True # create database backend
     _register = False # Set to false if the model shouldn't be automatically discovered.
     _name = None
+    _bigint_id = False
     _columns = {}
     _constraints = []
     _custom = False
@@ -517,7 +668,7 @@ class BaseModel(object):
         from . import fields
 
         # this field 'id' must override any other column or field
-        cls._add_field('id', fields.Id(automatic=True))
+        cls._add_field('id', fields.Id(automatic=True, bigint=cls._bigint_id))
 
         add('display_name', fields.Char(string='Display Name', automatic=True,
             compute='_compute_display_name'))
@@ -2474,11 +2625,19 @@ class BaseModel(object):
             column_data = self._select_column_data(cr)
 
             for k, f in self._columns.iteritems():
-                if k == 'id': # FIXME: maybe id should be a regular column?
-                    continue
                 # Don't update custom (also called manual) fields
                 if f.manual and not update_custom_fields:
                     continue
+
+                # Inject the FK target column's integer type
+                # so that it can be returned by `get_pg_type`
+                if hasattr(f, '_obj') and f._obj:
+                    target_data = self.pool[f._obj]._select_column_data(cr).get('id')
+                    if target_data:
+                        target_pg_type = target_data['typname']
+                    else:
+                        target_pg_type = 'int8' if self.pool[f._obj]._bigint_id else 'int4'
+                    setattr(f, '_obj_pg_type', target_pg_type)
 
                 if isinstance(f, fields.one2many):
                     self._o2m_raise_on_missing_reference(cr, f)
@@ -2523,6 +2682,16 @@ class BaseModel(object):
 
                         if f_obj_type:
                             ok = False
+                            if f_pg_type == 'int8' and f_obj_type == 'int4':
+                                # Don't touch columns migrated to int8 previously.
+                                # This allows to upgrade the column type in a custom addon.
+                                ok = True
+                            elif f_pg_type == 'int4' and f_obj_type == 'int8':
+                                int4_to_int8(cr, self._table, k)
+                                ok = True
+                            if k == 'id':
+                                continue
+
                             casts = [
                                 ('text', 'char', pg_varchar(f.size), '::%s' % pg_varchar(f.size)),
                                 ('varchar', 'text', 'TEXT', ''),
@@ -2627,6 +2796,9 @@ class BaseModel(object):
 
                     # The field doesn't exist in database. Create it if necessary.
                     else:
+                        if k == 'id':
+                            continue
+
                         if not isinstance(f, fields.function) or f.store:
                             # add the missing field
                             cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, k, get_pg_type(f)[1]))
@@ -2720,7 +2892,11 @@ class BaseModel(object):
 
 
     def _create_table(self, cr):
-        cr.execute('CREATE TABLE "%s" (id SERIAL NOT NULL, PRIMARY KEY(id))' % (self._table,))
+        if cr._cnx.server_version >= 100000 and self._bigint_id:
+            serial_type = 'BIGSERIAL'
+        else:
+            serial_type = 'SERIAL'
+        cr.execute('CREATE TABLE "%s" (id %s NOT NULL, PRIMARY KEY(id))' % (self._table, serial_type))
         cr.execute(("COMMENT ON TABLE \"%s\" IS %%s" % self._table), (self._description,))
         _schema.debug("Table '%s': created", self._table)
 
@@ -2796,7 +2972,15 @@ class BaseModel(object):
                 raise except_orm('Programming Error', 'Many2Many destination model does not exist: `%s`' % (f._obj,))
             dest_model = self.pool[f._obj]
             ref = dest_model._table
-            cr.execute('CREATE TABLE "%s" ("%s" INTEGER NOT NULL, "%s" INTEGER NOT NULL, PRIMARY KEY("%s","%s"))' % (m2m_tbl, col1, col2, col1, col2))
+            source_type = self._select_column_data(cr)['id']['typname']
+            target_data = dest_model._select_column_data(cr).get('id')
+            if target_data:
+                target_type = target_data['typname']
+            else:
+                target_type = 'int8' if dest_model._bigint_id else 'int4'
+
+            cr.execute('CREATE TABLE "%s" ("%s" %s NOT NULL, "%s" %s NOT NULL, PRIMARY KEY("%s","%s"))' % (
+                m2m_tbl, col1, source_type, col2, target_type, col1, col2))
             # create foreign key references with ondelete=cascade, unless the targets are SQL views
             cr.execute("SELECT relkind FROM pg_class WHERE relkind IN ('v') AND relname=%s", (ref,))
             if not cr.fetchall():

@@ -125,7 +125,7 @@ CREATE TABLE ir_model_data (
     date_update timestamp without time zone,
     module varchar NOT NULL,
     model varchar NOT NULL,
-    res_id integer,
+    res_id bigint,
     primary key(id)
 );
 

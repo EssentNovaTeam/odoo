@@ -277,7 +277,7 @@ class ir_actions_act_window(osv.osv):
             help="Optional domain filtering of the destination data, as a Python expression"),
         'context': fields.char('Context Value', required=True,
             help="Context dictionary as Python expression, empty by default (Default: {})"),
-        'res_id': fields.integer('Record ID', help="Database ID of record to open in form view, when ``view_mode`` is set to 'form' only"),
+        'res_id': fields.integer('Record ID', bigint=True, help="Database ID of record to open in form view, when ``view_mode`` is set to 'form' only"),
         'res_model': fields.char('Destination Model', required=True,
             help="Model name of the object to open in the view window"),
         'src_model': fields.char('Source Model',

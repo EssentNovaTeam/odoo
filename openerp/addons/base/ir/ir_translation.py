@@ -213,7 +213,7 @@ class ir_translation(osv.osv):
 
     _columns = {
         'name': fields.char('Translated field', required=True),
-        'res_id': fields.integer('Record ID', select=True),
+        'res_id': fields.integer('Record ID', select=True, bigint=True),
         'lang': fields.selection(_get_language, string='Language'),
         'type': fields.selection(TRANSLATION_TYPE, string='Type', select=True),
         'src': fields.text('Old source'),

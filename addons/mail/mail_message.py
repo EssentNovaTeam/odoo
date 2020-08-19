@@ -144,7 +144,7 @@ class mail_message(osv.Model):
             ondelete='set null', help="Initial thread message."),
         'child_ids': fields.one2many('mail.message', 'parent_id', 'Child Messages'),
         'model': fields.char('Related Document Model', size=128, select=1),
-        'res_id': fields.integer('Related Document ID', select=1),
+        'res_id': fields.integer('Related Document ID', select=1, bigint=True),
         'record_name': fields.char('Message Record Name', help="Name get of the related document."),
         'notification_ids': fields.one2many('mail.notification', 'message_id',
             string='Notifications', auto_join=True,

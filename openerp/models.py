@@ -4737,9 +4737,11 @@ class BaseModel(object):
         # a fast way to do it while preserving order (http://www.peterbe.com/plog/uniqifiers-benchmark)
         def _uniquify_list(seq):
             seen = set()
-            return [x for x in seq if x not in seen and not seen.add(x)]
+            for n, in seq:
+                if n not in seen and not seen.add(n):
+                    yield n
 
-        return _uniquify_list([x[0] for x in res])
+        return [x for x in _uniquify_list(res)]
 
     # returns the different values ever entered for one field
     # this is used, for example, in the client when the user hits enter on

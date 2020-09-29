@@ -47,7 +47,7 @@ import operator
 import pytz
 import re
 import time
-from collections import defaultdict, MutableMapping, OrderedDict
+from collections import defaultdict, MutableMapping, OrderedDict, deque
 from inspect import getmembers, currentframe
 from operator import itemgetter
 
@@ -4840,9 +4840,13 @@ class BaseModel(object):
         # a fast way to do it while preserving order (http://www.peterbe.com/plog/uniqifiers-benchmark)
         def _uniquify_list(seq):
             seen = set()
-            return [x for x in seq if x not in seen and not seen.add(x)]
+            dequeue_seq = deque(seq)
+            while dequeue_seq:
+                ds = dequeue_seq.popleft()
+                if ds[0] not in seen and not seen.add(ds[0]):
+                    yield ds[0]
 
-        return _uniquify_list([x[0] for x in res])
+        return [x for x in _uniquify_list(res)]
 
     # returns the different values ever entered for one field
     # this is used, for example, in the client when the user hits enter on

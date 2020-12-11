@@ -4911,7 +4911,7 @@ class BaseModel(object):
             # log_access enabled, so that 'create_uid' is always there.
             domain = [('create_uid', '=', uid)]
             tquery = self._where_calc(cr, uid, domain, active_test=False)
-            apply_rule(tquery.where_clause, tquery.where_clause_params, tquery.tables)
+            apply_rule(tquery)
             return
 
         # apply main rules on the object

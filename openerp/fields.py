@@ -712,7 +712,6 @@ class Field(object):
             # non-stored computed fields do not have a corresponding column
             self.column = None
             return None
-
         # determine column parameters
         #_logger.debug("Create fields._column for Field %s", self)
         args = {}
@@ -1038,24 +1037,19 @@ class Integer(Field):
     type = 'integer'
     _slots = {
         'group_operator': None,         # operator for aggregating values
+        'bigint': False,                # set to create an int8 type column
     }
 
     _related_group_operator = property(attrgetter('group_operator'))
     _description_group_operator = property(attrgetter('group_operator'))
     _column_group_operator = property(attrgetter('group_operator'))
+    _column_bigint = property(attrgetter('bigint'))
 
     def convert_to_cache(self, value, record, validate=True):
         if isinstance(value, dict):
             # special case, when an integer field is used as inverse for a one2many
             return value.get('id', False)
         return int(value or 0)
-
-    def convert_to_read(self, value, use_name_get=True):
-        # Integer values greater than 2^31-1 are not supported in pure XMLRPC,
-        # so we have to pass them as floats :-(
-        if value and value > xmlrpclib.MAXINT:
-            return float(value)
-        return value
 
     def _update(self, records, value):
         # special case, when an integer field is used as inverse for a one2many
@@ -1895,10 +1889,12 @@ class Id(Field):
         'string': 'ID',
         'store': True,
         'readonly': True,
+        'bigint': False,
     }
 
     def to_column(self):
         self.column = fields.integer(self.string)
+        self.column.bigint = self.bigint
         return self.column
 
     def __get__(self, record, owner):

@@ -47,6 +47,28 @@ import websrv_lib
 
 _logger = logging.getLogger(__name__)
 
+MAXLONG =  2L**63-1
+MINLONG = -2L**63
+
+# Patch xmlrpclib to avoid the 32 bit limit when sending longs
+def dump_long(_self, value, write):
+    if value > MAXLONG or value < MINLONG:
+        raise OverflowError, "long exceeds XML-RPC limits"
+    write("<value><i8>")
+    write(str(int(value)))
+    write("</i8></value>\n")
+
+def dump_int(_self, value, write):
+    if value > MAXLONG or value < MINLONG:
+        raise OverflowError, "int exceeds XML-RPC limits"
+    tag = 'i8' if value > xmlrpclib.MAXINT or value < xmlrpclib.MININT else 'int'
+    write("<value><%s>" % tag)
+    write(str(int(value)))
+    write("</%s></value>\n" % tag)
+
+xmlrpclib.Marshaller.dispatch[long] = dump_long
+xmlrpclib.Marshaller.dispatch[int] = dump_int
+
 # XML-RPC fault codes. Some care must be taken when changing these: the
 # constants are also defined client-side and must remain in sync.
 # User code must use the exceptions defined in ``openerp.exceptions`` (not

@@ -623,7 +623,7 @@ class marketing_campaign_workitem(osv.osv):
              type='many2one', relation='marketing.campaign', string='Campaign', readonly=True, store=True),
         'object_id': fields.related('activity_id', 'campaign_id', 'object_id',
              type='many2one', relation='ir.model', string='Resource', select=1, readonly=True, store=True),
-        'res_id': fields.integer('Resource ID', select=1, readonly=True),
+        'res_id': fields.integer('Resource ID', select=1, readonly=True, bigint=True),
         'res_name': fields.function(_res_name_get, string='Resource Name', fnct_search=_resource_search, type="char", size=64),
         'date': fields.datetime('Execution Date', help='If date is not set, this workitem has to be run manually', readonly=True),
         'partner_id': fields.many2one('res.partner', 'Partner', select=1, readonly=True),

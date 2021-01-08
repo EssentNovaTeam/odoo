@@ -44,7 +44,7 @@ class campaign_analysis(osv.osv):
             result[ca_obj.id] = total_cost
         return result
     _columns = {
-        'res_id' : fields.integer('Resource', readonly=True),
+        'res_id' : fields.integer('Resource', readonly=True, bigint=True),
         'year': fields.char('Year', size=4, readonly=True),
         'month': fields.selection([('01','January'), ('02','February'),
                                      ('03','March'), ('04','April'),('05','May'), ('06','June'),

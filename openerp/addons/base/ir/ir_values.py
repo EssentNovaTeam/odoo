@@ -170,7 +170,7 @@ class ir_values(osv.osv):
                                   "  - tree_but_open\n"
                                   "For defaults, an optional condition"
                              ,),
-        'res_id': fields.integer('Record ID', select=True,
+        'res_id': fields.integer('Record ID', select=True, bigint=True,
                                  help="Database identifier of the record to which this applies. "
                                       "0 = for all records"),
         'user_id': fields.many2one('res.users', 'User', ondelete='cascade', select=True,

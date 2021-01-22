@@ -43,7 +43,7 @@ class MailMailStats(osv.Model):
         ),
         'message_id': fields.char('Message-ID'),
         'model': fields.char('Document model'),
-        'res_id': fields.integer('Document ID'),
+        'res_id': fields.integer('Document ID', bigint=True),
         # campaign / wave data
         'mass_mailing_id': fields.many2one(
             'mail.mass_mailing', 'Mass Mailing',

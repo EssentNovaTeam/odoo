@@ -60,7 +60,7 @@ class invite_wizard(osv.osv_memory):
         'res_model': fields.char('Related Document Model',
                         required=True, select=1,
                         help='Model of the followed resource'),
-        'res_id': fields.integer('Related Document ID', select=1,
+        'res_id': fields.integer('Related Document ID', select=1, bigint=True,
                         help='Id of the followed resource'),
         'partner_ids': fields.many2many('res.partner', string='Recipients',
             help="List of partners that will be added as follower of the current document."),

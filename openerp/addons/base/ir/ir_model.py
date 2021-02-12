@@ -856,7 +856,7 @@ class ir_model_data(osv.osv):
         'complete_name': fields.function(_complete_name_get, type='char', string='Complete ID'),
         'model': fields.char('Model Name', required=True, select=1),
         'module': fields.char('Module', required=True, select=1),
-        'res_id': fields.integer('Record ID', select=1,
+        'res_id': fields.integer('Record ID', select=1, bigint=True,
                                  help="ID of the target record in the database"),
         'noupdate': fields.boolean('Non Updatable'),
         'date_update': fields.datetime('Update Date'),

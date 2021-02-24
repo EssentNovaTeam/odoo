@@ -4,7 +4,7 @@
 CREATE TABLE deleted_records (
     id serial,
     "table" varchar NOT NULL,
-    record_id integer NOT NULL,
+    record_id bigint NOT NULL,
     deleted_at timestamp,
     primary key(id)
 );

@@ -2899,7 +2899,11 @@ class BaseModel(object):
         cr.execute('CREATE TABLE "%s" (id %s NOT NULL, PRIMARY KEY(id))' % (self._table, serial_type))
         cr.execute(("COMMENT ON TABLE \"%s\" IS %%s" % self._table), (self._description,))
         _schema.debug("Table '%s': created", self._table)
-
+        if self._bigint_id:
+            # Fullblown test of bigint id sequence
+            _schema.warn("Activating fullblown bigint test by starting id sequence of table "
+                         "%s from 2^32", self._table)
+            cr.execute("ALTER SEQUENCE %s_id_seq RESTART WITH 2147483648" % self._table)
 
     def _parent_columns_exist(self, cr):
         cr.execute("""SELECT c.relname

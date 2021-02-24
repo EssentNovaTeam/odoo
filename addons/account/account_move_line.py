@@ -33,6 +33,7 @@ import openerp
 class account_move_line(osv.osv):
     _name = "account.move.line"
     _description = "Journal Items"
+    _bigint_id = True
 
     def _query_get(self, cr, uid, obj='l', context=None):
         fiscalyear_obj = self.pool.get('account.fiscalyear')

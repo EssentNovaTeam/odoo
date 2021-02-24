@@ -54,20 +54,21 @@ MINLONG = -2L**63
 def dump_long(_self, value, write):
     if value > MAXLONG or value < MINLONG:
         raise OverflowError, "long exceeds XML-RPC limits"
-    write("<value><i8>")
+    write("<value><ex:i8>")
     write(str(int(value)))
-    write("</i8></value>\n")
+    write("</ex:i8></value>\n")
 
 def dump_int(_self, value, write):
     if value > MAXLONG or value < MINLONG:
         raise OverflowError, "int exceeds XML-RPC limits"
-    tag = 'i8' if value > xmlrpclib.MAXINT or value < xmlrpclib.MININT else 'int'
+    tag = 'ex:i8' if value > xmlrpclib.MAXINT or value < xmlrpclib.MININT else 'int'
     write("<value><%s>" % tag)
     write(str(int(value)))
     write("</%s></value>\n" % tag)
 
 xmlrpclib.Marshaller.dispatch[long] = dump_long
 xmlrpclib.Marshaller.dispatch[int] = dump_int
+xmlrpclib.Unmarshaller.dispatch["ex:i8"] = xmlrpclib.Unmarshaller.dispatch["i8"]
 
 # XML-RPC fault codes. Some care must be taken when changing these: the
 # constants are also defined client-side and must remain in sync.

@@ -43,7 +43,7 @@ class mail_followers(osv.Model):
         'res_model': fields.char('Related Document Model',
                         required=True, select=1,
                         help='Model of the followed resource'),
-        'res_id': fields.integer('Related Document ID', select=1,
+        'res_id': fields.integer('Related Document ID', select=1, bigint=True,
                         help='Id of the followed resource'),
         'partner_id': fields.many2one('res.partner', string='Related Partner',
                         ondelete='cascade', required=True, select=1),

@@ -33,6 +33,7 @@ import StringIO
 import errno
 import logging
 import platform
+import re
 import socket
 import sys
 import threading
@@ -102,6 +103,11 @@ def xmlrpc_return(start_response, service, method, params, string_faultcode=Fals
             response = xmlrpc_handle_exception_string(e)
         else:
             response = xmlrpc_handle_exception_int(e)
+    # Inject Apache extension namespace
+    response = re.sub(
+        r'(^<\?xml([^>]+)>\s*)<methodResponse>',
+        r'\1<methodResponse xmlns:ex="http://ws.apache.org/xmlrpc/namespaces/extensions">',
+        response)
     start_response("200 OK", [('Content-Type','text/xml'), ('Content-Length', str(len(response)))])
     return [response]
 
